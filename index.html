@@ -885,7 +885,7 @@ function levelsHTML(cur, edit) {
   return Object.keys(LEVELS).map(k => `<button type="button" data-level="${k}" aria-pressed="${k === cur}"${edit ? '' : ' disabled'}>${LEVELS[k].name}<small>${LEVELS[k].note}</small></button>`).join('');
 }
 function renderHome() {
-  if (document.activeElement !== $('hName')) $('hName').value = myName;
+  if (document.activeElement !== $('hName') && !$('hName').value) $('hName').value = myName; /* never wipe a name being typed */
   $('onlineBox').hidden = !onlineOK;
   $('onlineNote').hidden = onlineOK;
   const savedHost = getItem(LS, 'cb-host');
