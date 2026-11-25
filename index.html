@@ -1,0 +1,1240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>if("serviceWorker"in navigator&&location.protocol==="https:")addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){})})</script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#15171C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Code Breaker">
+<meta name="description" content="Code Breaker: crack the secret colour code from the clues. A new daily code for everyone, or race friends and the computer online. Free, no sign-up.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect x=%278%27 y=%2726%27 width=%2748%27 height=%2732%27 rx=%278%27 fill=%27%233DDC84%27/%3E%3Cpath d=%27M20 26v-6a12 12 0 0 1 24 0v6%27 stroke=%27%233DDC84%27 stroke-width=%276%27 fill=%27none%27/%3E%3Ccircle cx=%2720%27 cy=%2742%27 r=%274.5%27 fill=%27%23FF5A5F%27/%3E%3Ccircle cx=%2732%27 cy=%2742%27 r=%274.5%27 fill=%27%23FFD23F%27/%3E%3Ccircle cx=%2744%27 cy=%2742%27 r=%274.5%27 fill=%27%233A86FF%27/%3E%3C/svg%3E">
+<title>Code Breaker · Game Night</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@600;700;800&family=Manrope:wght@500;600;700;800&display=swap" media="print" onload="this.media='all'"><noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@600;700;800&family=Manrope:wght@500;600;700;800&display=swap"></noscript>
+<script>/* connection tools load in the background, so the page shows at once; room actions wait for NET */window.NET=Promise.all(['vendor/peerjs-1.5.4.min.js','vendor/mqtt-5.10.1.min.js'].map(function(s){return new Promise(function(r){var e=document.createElement('script');e.src=s;e.async=false;e.onload=e.onerror=function(){r()};document.head.appendChild(e)})})).then(function(){window.NET_DONE=1});</script>
+<style>
+/* Layout: a dark vault panel. Your rows of guesses in the middle (newest at the bottom, next to your fingers), the colour buttons underneath, and everyone's progress along the top. */
+:root {
+  --bg: #15171C;
+  --bg-2: #0C0D10;
+  --bg-glow: #262B36;
+  --panel: #1D2029;
+  --hole: #0F1116;
+  --shade: rgba(0, 0, 0, .25);
+  --ink: #F1F2F5;
+  --muted: #A3A9B8;
+  --line: rgba(241, 242, 245, .13);
+  --accent: #3DDC84;
+  --on-accent: #06210F;
+  --gold: #FFD23F;
+  --danger: #FF8A80;
+  --shadow: rgba(0, 0, 0, .5);
+  --backdrop: rgba(5, 6, 8, .8);
+  --f-display: 'Rubik', 'Trebuchet MS', system-ui, sans-serif;
+  --f-body: 'Manrope', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --c0: #FF5A5F; --c1: #FF9F1C; --c2: #FFD23F; --c3: #3DDC84; --c4: #3A86FF; --c5: #9B5DE5; --c6: #FF70A6; --c7: #2EC4B6;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background-color: var(--bg);
+  background-image: radial-gradient(ellipse at 50% 25%, var(--bg-glow), var(--bg) 60%, var(--bg-2));
+  color: var(--ink);
+  font-family: var(--f-body);
+  font-size: 15px;
+  line-height: 1.4;
+  padding-left: max(14px, env(safe-area-inset-left, 0px));
+  padding-right: max(14px, env(safe-area-inset-right, 0px));
+  overflow-x: hidden;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
+button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+a { color: var(--accent); }
+h1, h2, h3 { font-family: var(--f-display); margin: 0; line-height: 1.1; font-weight: 800; text-wrap: balance; }
+
+.screen { min-height: 100%; display: grid; place-items: center; padding-block: max(20px, env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-bottom, 0px)); }
+.panel { width: min(100%, 460px); display: flex; flex-direction: column; gap: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 22px; padding: 24px 20px; box-shadow: 0 20px 50px var(--shadow); }
+.logo { font-size: 34px; display: flex; align-items: center; gap: 12px; }
+.logo svg { width: 42px; height: 42px; flex: none; }
+.tagline { margin: 6px 0 0; color: var(--muted); }
+.block { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1px solid var(--line); }
+.block h3 { font-size: 17px; font-weight: 700; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.row > * { min-width: 0; }
+.grow { flex: 1; }
+.input { font: inherit; font-size: 16px; min-height: 46px; padding: 11px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg-2); color: var(--ink); width: 100%; }
+.code-input { text-transform: uppercase; letter-spacing: .3em; font-weight: 800; }
+.msg { min-height: 20px; font-weight: 700; font-size: 13.5px; color: var(--muted); }
+.msg.err { color: var(--danger); }
+.note { font-size: 13px; color: var(--muted); margin: 0; }
+.eyebrow { font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 0; }
+.room-code { font-family: var(--f-display); font-weight: 800; font-size: 48px; letter-spacing: .16em; color: var(--accent); line-height: 1; }
+.share { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.share code { background: var(--bg-2); border: 1px solid var(--line); padding: 6px 9px; border-radius: 8px; word-break: break-all; flex: 1; min-width: 0; font-family: var(--f-body); }
+.plist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.plist li { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 12px; background: var(--shade); border: 1px solid var(--line); }
+.plist .nm { font-weight: 800; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex: none; }
+.dot.off { background: var(--danger); }
+.dot.cpu { background: var(--muted); }
+.x { border: 1px solid var(--line); background: transparent; border-radius: 8px; padding: 6px 12px; min-height: 36px; font-size: 13px; font-weight: 700; }
+.btn { border-radius: 12px; padding: 12px 14px; font-weight: 800; font-size: 15px; border: 1px solid var(--line); background: var(--shade); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.primary:not(:disabled):hover { filter: brightness(.93); }
+.btn.gold { background: var(--gold); border-color: var(--gold); color: #2A2000; }
+.ghost { background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; min-height: 38px; font-size: 13px; font-weight: 700; color: var(--ink); }
+@media (hover: hover) { .ghost:hover { border-color: var(--accent); } }
+.levels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.levels button { border: 1px solid var(--line); background: transparent; border-radius: 12px; padding: 8px 6px; font-weight: 800; font-size: 13px; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.levels button small { font-weight: 600; font-size: 11px; }
+.levels button[aria-pressed="true"] { border-color: var(--accent); color: var(--ink); background: rgba(61, 220, 132, .1); }
+.levels button:disabled { cursor: default; }
+.daily { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 14px; background: rgba(255, 210, 63, .08); border: 1px solid rgba(255, 210, 63, .35); }
+.daily div { flex: 1; min-width: 0; }
+.daily b { display: block; }
+
+/* pegs */
+.peg { --s: 34px; width: var(--s); height: var(--s); border-radius: 50%; flex: none; display: grid; place-items: center; font-size: calc(var(--s) * .38); color: rgba(0, 0, 0, .55); font-weight: 800; line-height: 1; border: 0; padding: 0; box-shadow: inset 0 -3px 0 rgba(0, 0, 0, .22), 0 2px 4px rgba(0, 0, 0, .35); }
+.peg.empty { background: var(--hole); box-shadow: inset 0 2px 4px rgba(0, 0, 0, .6); color: transparent; }
+.peg.next { box-shadow: inset 0 2px 4px rgba(0, 0, 0, .6), 0 0 0 2px var(--gold); }
+.peg.pop { animation: pop .22s ease both; }
+@keyframes pop { from { transform: scale(.5); } to { transform: none; } }
+.k0 { background: var(--c0); } .k1 { background: var(--c1); } .k2 { background: var(--c2); } .k3 { background: var(--c3); }
+.k4 { background: var(--c4); } .k5 { background: var(--c5); } .k6 { background: var(--c6); } .k7 { background: var(--c7); }
+
+/* Game */
+#app { height: 100%; max-width: 620px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; padding-block: max(8px, env(safe-area-inset-top, 0px)) max(10px, env(safe-area-inset-bottom, 0px)); }
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.brand h1 { font-size: 21px; }
+.brand p { margin: 1px 0 0; font-size: 11px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; font-weight: 700; }
+.net { color: var(--accent); }
+.net.warn { color: var(--gold); }
+.top-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+#btnMenu { display: none; }
+.menu-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.menu-list .btn { text-align: left; }
+
+.people { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.people::-webkit-scrollbar { display: none; }
+.who { flex: none; display: flex; flex-direction: column; gap: 3px; padding: 6px 10px; min-width: 84px; border-radius: 12px; background: var(--shade); border: 1px solid var(--line); }
+.who .n { font-weight: 800; font-size: 12.5px; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; justify-content: space-between; gap: 6px; }
+.who .n b { color: var(--gold); font-family: var(--f-display); }
+.who .t { font-size: 10.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+.who.won { border-color: var(--accent); }
+.who.won .t { color: var(--accent); }
+.who.out .t { color: var(--danger); }
+.who.me { box-shadow: inset 0 0 0 1px var(--gold); }
+
+.board { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; padding: 4px 2px; }
+.board .spacer { flex: 1; }
+.grow-row { display: grid; grid-template-columns: 22px auto 1fr; align-items: center; gap: 10px; padding: 5px 10px; border-radius: 14px; background: var(--shade); border: 1px solid transparent; }
+.grow-row.cur { border-color: var(--gold); background: rgba(255, 210, 63, .06); }
+.grow-row .no { font-size: 11px; font-weight: 800; color: var(--muted); text-align: right; }
+.pegs { display: flex; gap: 7px; }
+.fb { display: grid; grid-template-columns: repeat(3, 12px); gap: 3px; justify-self: end; }
+.fb i { width: 12px; height: 12px; border-radius: 50%; background: var(--hole); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .6); }
+.fb i.b { background: var(--ink); box-shadow: none; }
+.fb i.w { background: transparent; border: 2px solid var(--ink); box-shadow: none; }
+.mini { display: inline-flex; gap: 2px; }
+.mini i { width: 8px; height: 8px; border-radius: 50%; background: var(--hole); }
+.mini i.b { background: var(--ink); }
+.mini i.w { border: 1.5px solid var(--ink); background: transparent; }
+.secret { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px; border-radius: 14px; background: rgba(61, 220, 132, .08); border: 1px solid rgba(61, 220, 132, .4); }
+.secret .pegs .peg { --s: 38px; }
+
+.act { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 12px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); }
+.act.mine { border-color: var(--gold); }
+.status { font-size: 15px; font-weight: 800; }
+.sub { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.palette { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.palette .peg { --s: 40px; cursor: pointer; }
+.palette .peg:disabled { opacity: .3; cursor: not-allowed; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.actions .btn { flex: 1; }
+
+.modal { position: fixed; inset: 0; z-index: 20; background: var(--backdrop); display: grid; place-items: center; padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+.sheet { width: min(100%, 520px); max-height: 100%; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 22px 20px; box-shadow: 0 20px 50px var(--shadow); }
+.sheet h2 { font-size: 25px; margin-bottom: 4px; }
+.sheet h2 span { color: var(--accent); }
+.sheet .lede { color: var(--muted); margin: 0 0 14px; }
+.sheet ul.rules { margin: 0 0 16px; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; }
+.sheet ul.rules b { color: var(--gold); }
+.order { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.order li { display: grid; grid-template-columns: 30px 1fr auto auto; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 12px; background: var(--shade); border: 1px solid var(--line); }
+.order li.me-row { border-color: var(--gold); }
+.order .pl { font-family: var(--f-display); font-weight: 800; color: var(--accent); font-size: 18px; }
+.order .nm { font-weight: 800; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.order .nm small { display: block; color: var(--muted); font-weight: 600; font-size: 11px; }
+.order .plus { color: var(--accent); font-weight: 800; font-size: 13px; }
+.order .pts { font-variant-numeric: tabular-nums; font-weight: 800; text-align: right; min-width: 52px; }
+.order .pts small { display: block; color: var(--muted); font-weight: 600; font-size: 11px; }
+.sheet-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.emoji-grid { font-size: 20px; line-height: 1.2; letter-spacing: 2px; background: var(--bg-2); border-radius: 12px; padding: 10px 12px; margin: 0 0 14px; white-space: pre; overflow-x: auto; }
+
+@media (max-width: 560px) {
+  #btnRules, #btnScores, #btnLeave { display: none; }
+  #btnMenu { display: inline-block; }
+  .room-code { font-size: 40px; }
+  .peg { --s: 31px; }
+  .palette .peg { --s: 37px; }
+}
+@media (max-width: 360px) {
+  .peg { --s: 27px; }
+  .palette .peg { --s: 33px; }
+  .palette { gap: 6px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="lock" viewBox="0 0 64 64"><rect x="8" y="26" width="48" height="32" rx="8" fill="#3DDC84"/><path d="M20 26v-6a12 12 0 0 1 24 0v6" stroke="#3DDC84" stroke-width="6" fill="none"/><circle cx="20" cy="42" r="4.5" fill="#FF5A5F"/><circle cx="32" cy="42" r="4.5" fill="#FFD23F"/><circle cx="44" cy="42" r="4.5" fill="#3A86FF"/></symbol></svg>
+
+<section class="screen" id="home" hidden>
+  <div class="panel">
+    <div>
+      <h1 class="logo"><svg aria-hidden="true"><use href="#lock"/></svg>Code Breaker</h1>
+      <p class="tagline">A secret colour code is locked away. Guess it, read the clues, and crack it in as few tries as you can.</p>
+    </div>
+    <div class="daily" id="dailyBox">
+      <div><b id="dailyTitle">Today's code</b><span class="note" id="dailyNote">The same code for everyone today.</span></div>
+      <button class="btn gold" id="hDaily" type="button">Play</button>
+    </div>
+    <label class="eyebrow" for="hName">Your name</label>
+    <input class="input" id="hName" maxlength="14" autocomplete="nickname" placeholder="Type your name">
+    <div class="block">
+      <h3>Race your friends</h3>
+      <div id="onlineBox" class="row" style="flex-direction: column; align-items: stretch;">
+        <button class="btn primary" id="hCreate" type="button">Create a room</button>
+        <form class="row" id="joinForm">
+          <input class="input code-input grow" id="hCode" maxlength="4" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false" style="width:auto">
+          <button class="btn" id="hJoin" type="submit">Join room</button>
+        </form>
+        <button class="btn" id="hReopen" type="button" hidden>Reopen your room</button>
+      </div>
+      <p class="note" id="onlineNote" hidden>Online rooms work on the website, not inside this preview: <a href="https://libyan11.github.io/code-breaker/" target="_blank" rel="noopener">libyan11.github.io/code-breaker</a></p>
+    </div>
+    <div class="block">
+      <h3>Race the computer</h3>
+      <div class="levels" id="hLevels"></div>
+      <div class="row">
+        <select class="input grow" id="hBots" style="width:auto" aria-label="Number of computer players">
+          <option value="0">Just me, no race</option>
+          <option value="1" selected>1 computer player</option>
+          <option value="2">2 computer players</option>
+          <option value="3">3 computer players</option>
+        </select>
+        <button class="btn" id="hSolo" type="button">Play</button>
+      </div>
+      <button class="btn" id="hContinue" type="button" hidden>Continue your game</button>
+    </div>
+    <p class="msg" id="homeMsg" aria-live="polite"></p>
+    <div class="row"><button class="ghost" id="hRules" type="button">Rules</button></div>
+  </div>
+</section>
+
+<section class="screen" id="lobby" hidden>
+  <div class="panel">
+    <div>
+      <p class="eyebrow">Room code</p>
+      <div class="room-code" id="lCode">····</div>
+      <p class="note" id="lNet">Opening room…</p>
+    </div>
+    <div class="share">
+      <code id="lLink"></code>
+      <button class="ghost" id="lCopy" type="button">Copy link</button>
+    </div>
+    <p class="note" id="lCopyMsg" aria-live="polite"></p>
+    <div class="block">
+      <h3 id="lCount">Players</h3>
+      <ul class="plist" id="lPlayers"></ul>
+      <p class="eyebrow">How hard</p>
+      <div class="levels" id="lLevels"></div>
+      <div class="row" id="lHost" style="flex-direction: column; align-items: stretch;">
+        <button class="btn" id="lAddBot" type="button">Add computer player</button>
+        <button class="btn primary" id="lStart" type="button">Start</button>
+      </div>
+      <p class="note" id="lNote"></p>
+    </div>
+    <div class="row"><button class="ghost" id="lRules" type="button">Rules</button><button class="ghost" id="lLeave" type="button">Leave room</button></div>
+  </div>
+</section>
+
+<div id="app" hidden>
+  <header class="top">
+    <div class="brand">
+      <h1>Code Breaker</h1>
+      <p><span id="roundNo">Round 1</span> <span class="net" id="net"></span></p>
+    </div>
+    <div class="top-actions">
+      <button class="ghost" id="btnRules" type="button">Rules</button>
+      <button class="ghost" id="btnScores" type="button">Scores</button>
+      <button class="ghost" id="btnLeave" type="button">Leave</button>
+      <button class="ghost" id="btnMenu" type="button" aria-label="Menu: rules, scores, leave">Menu</button>
+    </div>
+  </header>
+
+  <section class="people" id="people" aria-label="Everyone's progress"></section>
+
+  <section class="board" id="board" aria-label="Your guesses"></section>
+
+  <section class="act" id="act" aria-live="polite">
+    <div class="status" id="status"></div>
+    <div class="sub" id="sub"></div>
+    <div class="palette" id="palette" role="group" aria-label="Colours"></div>
+    <div id="actMore"></div>
+  </section>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ================= constants & helpers ================= */
+const BOT_NAMES = ['Nour', 'Sami', 'Layla', 'Karim', 'Huda', 'Omar', 'Rana'];
+const MAX_PLAYERS = 8, MIN_PLAYERS = 1;
+const LEVELS = {
+  easy: { name: 'Easy', pegs: 4, colors: 6, rep: false, tries: 10, note: '4 pegs, no repeats' },
+  normal: { name: 'Normal', pegs: 4, colors: 6, rep: true, tries: 10, note: '4 pegs, repeats' },
+  hard: { name: 'Hard', pegs: 5, colors: 8, rep: true, tries: 12, note: '5 pegs, 8 colours' }
+};
+const SYM = ['●', '▲', '■', '◆', '★', '✚', '♥', '⬢'];
+const CNAME = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'teal'];
+const DAILY_LEVEL = 'normal';
+
+const LS = (() => { try { return window.localStorage; } catch (e) { return null; } })();
+const SS = (() => { try { return window.sessionStorage; } catch (e) { return null; } })();
+function getItem(st, k) { try { const v = st && st.getItem(k); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
+function setItem(st, k, v) { try { if (!st) return; if (v == null) st.removeItem(k); else st.setItem(k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } }
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+const rid = () => Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
+
+/* black = right colour in the right place; white = right colour, wrong place */
+function score(code, guess) {
+  let b = 0; const cc = {}, gc = {};
+  for (let i = 0; i < code.length; i++) {
+    if (code[i] === guess[i]) b++;
+    cc[code[i]] = (cc[code[i]] || 0) + 1; gc[guess[i]] = (gc[guess[i]] || 0) + 1;
+  }
+  let common = 0;
+  Object.keys(gc).forEach(k => { common += Math.min(gc[k], cc[k] || 0); });
+  return { b, w: common - b };
+}
+function validGuess(g, L) {
+  if (!Array.isArray(g) || g.length !== L.pegs) return false;
+  if (!g.every(x => Number.isInteger(x) && x >= 0 && x < L.colors)) return false;
+  return L.rep || new Set(g).size === g.length;
+}
+function allCodes(L) {
+  const out = [];
+  const total = Math.pow(L.colors, L.pegs);
+  for (let n = 0; n < total; n++) {
+    const c = []; let x = n;
+    for (let i = 0; i < L.pegs; i++) { c.push(x % L.colors); x = Math.floor(x / L.colors); }
+    if (L.rep || new Set(c).size === c.length) out.push(c);
+  }
+  return out;
+}
+/* a tiny seeded random, so everyone gets the same daily code */
+function seeded(str) { let h = 1779033703 ^ str.length; for (let i = 0; i < str.length; i++) { h = Math.imul(h ^ str.charCodeAt(i), 3432918353); h = h << 13 | h >>> 19; } return () => { h = Math.imul(h ^ (h >>> 16), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); h ^= h >>> 16; return (h >>> 0) / 4294967296; }; }
+function makeCode(L, rnd) {
+  rnd = rnd || Math.random;
+  const c = [];
+  while (c.length < L.pegs) { const x = Math.floor(rnd() * L.colors); if (L.rep || !c.includes(x)) c.push(x); }
+  return c;
+}
+function today() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function dailyCode(day) { return makeCode(LEVELS[DAILY_LEVEL], seeded('gamenight-code-' + day)); }
+
+const me = (() => { let id = getItem(SS, 'cb-id'); if (!id) { id = rid(); setItem(SS, 'cb-id', id); } return id; })();
+let myName = getItem(LS, 'cb-name') || '';
+const onlineOK = !/claude|anthropic/i.test(location.hostname) && location.protocol !== 'data:';
+
+let role = null;      // 'solo' | 'host' | 'guest' | null
+let roomCode = '';
+let S = null;         // full game state (solo and host only)
+let V = null;         // what this screen shows
+let timer = null, token = 0;
+let pickFor = '', shownOver = null;
+let homeMsg = '', homeErr = false;
+let homeLevel = getItem(LS, 'cb-level') || 'normal';
+let draft = [], draftFor = '';
+const botMem = new Map(); /* computer players' remaining possible codes; rebuilt from their rows if missing */
+
+/* ================= game engine (runs on the host / solo device) ================= */
+function newPlayer(id, name, bot) { return { id, name, bot: !!bot, online: true, score: 0, wins: 0, skill: bot ? 0.4 + Math.random() * 0.35 : 0 }; }
+function idxOf(pid) { return S.players.findIndex(p => p.id === pid); }
+function addLog() { /* this game shows progress on the board instead of a log */ }
+function botName() { return BOT_NAMES.find(n => !S.players.some(p => p.name === n)) || 'Computer ' + (S.players.length + 1); }
+function watching() { return S.players.some(q => !q.bot && q.online); }
+function lvl() { return LEVELS[S.level] || LEVELS.normal; }
+function needs(i) { const p = S.players[i]; return p.bot || p.online; }
+
+function baseState(mode, level) {
+  return { v: 1, mode, hostId: me, players: [], waiting: [], phase: 'lobby', level: LEVELS[level] ? level : 'normal', round: 0,
+    code: [], rows: {}, st: {}, doneAt: {}, startAt: 0, botAt: {}, results: null, day: '' };
+}
+function seatWaiting() {
+  while (S.waiting.length) {
+    const w = S.waiting[0];
+    if (S.players.length < MAX_PLAYERS) S.players.push(newPlayer(w.id, w.name, false));
+    else {
+      const b = S.players.map(p => p.bot).lastIndexOf(true);
+      if (b < 0) break;
+      S.players[b] = newPlayer(w.id, w.name, false);
+    }
+    S.players[S.players.length - 1].online = w.online !== false;
+    S.waiting.shift();
+  }
+}
+
+function newRound() {
+  token++; clearTimeout(timer);
+  seatWaiting();
+  S.round++;
+  if (S.mode === 'daily') { S.level = DAILY_LEVEL; S.day = today(); S.code = dailyCode(S.day); }
+  else S.code = makeCode(lvl());
+  S.rows = {}; S.st = {}; S.doneAt = {}; S.results = null; S.botAt = {};
+  S.startAt = Date.now();
+  botMem.clear();
+  S.players.forEach((p, i) => { S.rows[i] = []; S.st[i] = 'play'; if (p.bot) S.botAt[i] = Date.now() + botDelay(); });
+  S.phase = 'play';
+  step();
+}
+function botDelay() { return watching() ? 3500 + Math.random() * 6000 : 20; }
+function schedule(fn, ms) {
+  clearTimeout(timer);
+  const t = token;
+  timer = setTimeout(() => { if (t === token) fn(); }, ms);
+}
+function step() {
+  changed();
+  if (S.phase === 'play' && S.players.some(p => p.bot)) schedule(tick, 400);
+}
+function tick() {
+  if (S.phase !== 'play') return;
+  const now = Date.now();
+  let moved = false;
+  S.players.forEach((p, i) => {
+    if (!p.bot || S.st[i] !== 'play' || now < S.botAt[i]) return;
+    guessRow(i, botPick(i));
+    S.botAt[i] = Date.now() + botDelay();
+    moved = true;
+  });
+  if (S.phase !== 'play') return;
+  if (moved) changed();
+  schedule(tick, 400);
+}
+/* the computer keeps a list of codes that still fit every clue so far, and picks one of them.
+   Weaker computer players sometimes pick a code that doesn't fit, which wastes a try. */
+function botPick(i) {
+  const L = lvl();
+  let cand = botMem.get(i);
+  if (!cand) {
+    cand = allCodes(L);
+    (S.rows[i] || []).forEach(r => { cand = cand.filter(c => { const s = score(c, r.g); return s.b === r.b && s.w === r.w; }); });
+    botMem.set(i, cand);
+  }
+  const p = S.players[i];
+  if (!cand.length || (S.rows[i].length > 0 && Math.random() > p.skill && cand.length > 2)) return makeCode(L);
+  return cand[Math.floor(Math.random() * cand.length)].slice();
+}
+function guessRow(pi, g) {
+  const L = lvl();
+  if (S.phase !== 'play' || S.st[pi] !== 'play' || !validGuess(g, L)) return false;
+  const s = score(S.code, g);
+  S.rows[pi].push({ g: g.slice(), b: s.b, w: s.w });
+  const cand = botMem.get(pi);
+  if (cand) botMem.set(pi, cand.filter(c => { const t = score(c, g); return t.b === s.b && t.w === s.w; }));
+  if (s.b === L.pegs) { S.st[pi] = 'won'; S.doneAt[pi] = Date.now(); }
+  else if (S.rows[pi].length >= L.tries) { S.st[pi] = 'out'; S.doneAt[pi] = Date.now(); }
+  checkEnd();
+  return true;
+}
+function checkEnd() {
+  if (S.phase === 'play' && S.players.every((p, i) => !needs(i) || S.st[i] !== 'play')) endRound();
+}
+/* round points: fastest cracker (fewest tries, then quickest) 3, next 2, next 1 */
+function endRound() {
+  token++; clearTimeout(timer);
+  const res = S.players.map((p, i) => ({ pi: i, won: S.st[i] === 'won', tries: S.rows[i] ? S.rows[i].length : 0, ms: S.doneAt[i] ? S.doneAt[i] - S.startAt : null, pts: 0 }));
+  const won = res.filter(r => r.won).sort((a, b) => a.tries - b.tries || a.ms - b.ms);
+  won.forEach((r, k) => { r.pts = S.players.length > 1 ? [3, 2, 1][k] || 0 : 0; r.place = k; });
+  res.forEach(r => { S.players[r.pi].score += r.pts; });
+  if (won.length && S.players.length > 1) S.players[won[0].pi].wins++;
+  S.results = res;
+  S.phase = 'end';
+  if (S.mode === 'daily') saveDaily(res[0]);
+  step();
+}
+function saveDaily(r) {
+  const d = getItem(LS, 'cb-daily') || {};
+  if (d.day === S.day) return;
+  const yesterday = (() => { const t = new Date(); t.setDate(t.getDate() - 1); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); })();
+  const streak = r.won ? (d.day === yesterday && d.won ? (d.streak || 0) + 1 : 1) : 0;
+  setItem(LS, 'cb-daily', { day: S.day, won: r.won, tries: r.tries, streak, best: Math.max(streak, d.best || 0), rows: S.rows[0].map(x => [x.b, x.w]) });
+}
+
+function handleAct(pid, act, data) {
+  if (!S) return;
+  data = data || {};
+  const pi = idxOf(pid);
+  const isHost = pid === S.hostId;
+  if (act === 'guess') { if (pi >= 0 && guessRow(pi, (data.g || []).map(Number))) changed(); return; }
+  if (act === 'giveup') { if (pi >= 0 && S.phase === 'play' && S.st[pi] === 'play') { S.st[pi] = 'out'; S.doneAt[pi] = Date.now(); checkEnd(); changed(); } return; }
+  if (!isHost) return;
+  if (act === 'addBot') {
+    if (S.phase !== 'lobby' || S.players.length >= MAX_PLAYERS) return;
+    S.players.push(newPlayer('bot-' + rid(), botName(), true));
+    changed();
+  } else if (act === 'remove') {
+    if (S.phase !== 'lobby' || data.id === S.hostId) return;
+    const i = idxOf(data.id);
+    if (i < 0) return;
+    S.players.splice(i, 1);
+    conns.forEach(c => { if (c.pid === data.id) { try { c.send({ t: 'kicked' }); } catch (e) { /* gone */ } } });
+    changed();
+  } else if (act === 'settings') {
+    if (S.phase !== 'lobby' || !LEVELS[data.level]) return;
+    S.level = data.level;
+    changed();
+  } else if (act === 'start') {
+    if (S.phase !== 'lobby' || S.players.length < MIN_PLAYERS) return;
+    newRound();
+  } else if (act === 'next') {
+    if (S.phase === 'end' && S.mode !== 'daily') newRound();
+  } else if (act === 'endNow') {
+    if (S.phase === 'play') endRound();
+  } else if (act === 'lobby') {
+    if (S.phase !== 'end') return;
+    seatWaiting();
+    S.phase = 'lobby';
+    changed();
+  }
+}
+
+/* you see your own guesses; for everyone else only their clue pegs, never their colours. The code shows when the round ends. */
+function viewFor(pid) {
+  const idx = S.players.findIndex(p => p.id === pid);
+  const v = { mode: S.mode, phase: S.phase, level: S.level, round: S.round, hostId: S.hostId, waiting: S.waiting.map(w => w.name), day: S.day };
+  v.me = idx;
+  v.players = S.players.map((p, i) => ({ id: p.id, name: p.name, bot: p.bot, online: p.online, score: p.score, wins: p.wins, st: S.st[i] || 'play',
+    tries: S.rows[i] ? S.rows[i].length : 0, fb: (S.rows[i] || []).map(r => [r.b, r.w]) }));
+  v.rows = idx >= 0 && S.rows[idx] ? JSON.parse(JSON.stringify(S.rows[idx])) : [];
+  v.code = S.phase === 'end' ? S.code.slice() : null;
+  v.results = S.results ? JSON.parse(JSON.stringify(S.results)) : null;
+  return v;
+}
+
+function changed() {
+  if (role === 'host') broadcast();
+  if (role === 'host' || role === 'solo') {
+    V = viewFor(me);
+    if (role === 'solo' && S.mode !== 'daily') setItem(LS, 'cb-solo', S);
+    else if (role === 'solo') setItem(LS, 'cb-daygame', S);
+    else setItem(LS, 'cb-host', { code: roomCode, S });
+  }
+  render();
+}
+
+/* ================= networking (host-authoritative rooms) =================
+   A direct phone-to-phone link (PeerJS) is tried first. Public MQTT relays carry the same
+   messages as a backup when a network blocks the direct link. */
+const PEER_PREFIX = 'gamenight-codebreaker-room-';
+const RELAYS = [
+  ['wss://public.cloud.shiftr.io:443', { username: 'public', password: 'public' }],
+  ['wss://broker.hivemq.com:8884/mqtt', {}],
+  ['wss://broker.emqx.io:8084/mqtt', {}]
+];
+const RELAY_ROOT = 'gamenight-codebreaker-v1/';
+let peer = null, hostConn = null, link = null, everConnected = false;
+const conns = new Set(), relayConns = new Map();
+let stateSeq = 0, hostSess = '', lastState = { hs: null, sv: 0 };
+let fallbackTimer = 0, giveUpTimer = 0, retryTimer = 0, helloIv = 0, beatIv = 0, lastHostMsg = 0;
+const relay = { clients: [], seq: 0, sess: '', seen: new Map() };
+
+function netReady() { return typeof Peer !== 'undefined' || typeof mqtt !== 'undefined'; }
+let netWait = false;
+function waitNet(fn) { if (window.NET_DONE) return false; if (!netWait) { netWait = true; NET.then(() => { netWait = false; fn(); }); } return true; }
+function newCode() { const a = 'ABCDEFGHJKMNPQRSTUVWXYZ'; let c = ''; for (let i = 0; i < 4; i++) c += a[Math.floor(Math.random() * a.length)]; return c; }
+function peerIdFor(code) { return PEER_PREFIX + code.toLowerCase(); }
+function roomTopic(rest) { return 'room/' + roomCode.toLowerCase() + '/' + rest; }
+let netText = '', netWarn = false;
+function setNet(text, warn) { netText = text || ''; netWarn = !!warn; renderNet(); }
+
+function relayStart(listen, onMsg) {
+  relayStop();
+  if (typeof mqtt === 'undefined') return;
+  relay.sess = Math.random().toString(36).slice(2, 8);
+  const topic = RELAY_ROOT + listen;
+  relay.clients = RELAYS.map(([url, o]) => {
+    let c;
+    try { c = mqtt.connect(url, Object.assign({}, o, { clientId: 'cb-' + me + '-' + Math.random().toString(36).slice(2, 6), connectTimeout: 10000, reconnectPeriod: 4000, keepalive: 30 })); }
+    catch (e) { return null; }
+    c.on('connect', () => c.subscribe(topic));
+    c.on('message', (t, buf) => {
+      let env; try { env = JSON.parse(buf.toString()); } catch (e) { return; }
+      if (!env || !env.id || env.f === me || relay.seen.has(env.id)) return;
+      relay.seen.set(env.id, 1);
+      if (relay.seen.size > 600) relay.seen.delete(relay.seen.keys().next().value);
+      onMsg(env.m, String(env.f || ''));
+    });
+    c.on('error', () => {});
+    return c;
+  }).filter(Boolean);
+}
+function relaySend(to, m) {
+  const env = JSON.stringify({ f: me, id: me + '.' + relay.sess + '.' + (++relay.seq), m });
+  relay.clients.forEach(c => { if (c.connected) { try { c.publish(RELAY_ROOT + to, env); } catch (e) { /* skip */ } } });
+}
+function relayStop() {
+  relay.clients.forEach(c => { try { c.end(true); } catch (e) { /* skip */ } });
+  relay.clients = []; relay.seen.clear();
+}
+
+/* ---- host ---- */
+function broadcast() {
+  const sv = ++stateSeq;
+  conns.forEach(c => { if (c.open && c.pid) { try { c.send({ t: 'state', v: viewFor(c.pid), hs: hostSess, sv }); } catch (e) { /* dropped */ } } });
+}
+function startHostRelay() {
+  relayConns.clear();
+  relayStart(roomTopic('host'), (m, f) => {
+    if (role !== 'host' || !m || !f) return;
+    let c = relayConns.get(f);
+    if (!c) {
+      if (m.t !== 'hello') return;
+      c = { relay: true, from: f, pid: null, open: true, seen: 0, send: x => relaySend(roomTopic('g/' + f), x), close() { this.open = false; } };
+      relayConns.set(f, c);
+    }
+    c.seen = Date.now();
+    if (m.t !== 'ping') hostReceive(c, m);
+  });
+  clearInterval(beatIv);
+  /* every guest pings every 5s; anyone silent for 15-20s is treated as gone, and the computer covers their turns */
+  beatIv = setInterval(() => {
+    const now = Date.now();
+    relayConns.forEach((c, f) => { if (now - c.seen > 20000) { relayConns.delete(f); c.open = false; hostDrop(c); } });
+    conns.forEach(c => {
+      if (!c.relay && c.seen && now - c.seen > 15000) { try { c.close(); } catch (e) { /* skip */ } hostDrop(c); }
+      else { try { c.send({ t: 'ping' }); } catch (e) { /* skip */ } }
+    });
+  }, 5000);
+}
+function openHostPeer(attempt) {
+  attempt = attempt || 0;
+  if (typeof Peer === 'undefined') { setNet('Room open · backup link'); return; }
+  setNet('Opening room…', true);
+  peer = new Peer(peerIdFor(roomCode), { debug: 1 });
+  peer.on('open', () => setNet('Room open'));
+  peer.on('connection', c => {
+    c.on('data', m => hostReceive(c, m));
+    c.on('close', () => hostDrop(c));
+    c.on('error', () => hostDrop(c));
+  });
+  peer.on('disconnected', () => { setNet('Reconnecting…', true); setTimeout(() => { try { if (peer && !peer.destroyed) peer.reconnect(); } catch (e) { /* skip */ } }, 1500); });
+  peer.on('error', e => {
+    if (e.type === 'unavailable-id' && attempt < 12) {
+      setNet('Reopening room…', true);
+      try { peer.destroy(); } catch (x) { /* skip */ }
+      setTimeout(() => { if (role === 'host') openHostPeer(attempt + 1); }, 3000);
+    } else if (e.type !== 'peer-unavailable') setNet('Connection problem (' + e.type + ')', true);
+  });
+}
+function hostReceive(c, m) {
+  if (!m || typeof m !== 'object' || !S) return;
+  c.seen = Date.now();
+  if (m.t === 'ping') return;
+  if (m.t === 'away' && c.pid) {
+    conns.delete(c);
+    const p = S.players.find(x => x.id === c.pid);
+    if (p) p.online = false;
+    const w = S.waiting.find(x => x.id === c.pid);
+    if (w) w.online = false;
+    afterPresence();
+    return;
+  }
+  if (m.t === 'hello') {
+    const pid = String(m.cid || '').slice(0, 24);
+    if (!pid || pid === S.hostId) { try { c.close(); } catch (e) { /* skip */ } return; }
+    const name = String(m.name || '').trim().slice(0, 14) || 'Player';
+    c.pid = pid; conns.add(c);
+    let p = S.players.find(x => x.id === pid);
+    if (!p) {
+      p = S.players.find(x => !x.bot && !x.online && x.id !== S.hostId && x.name.toLowerCase() === name.toLowerCase());
+      if (p) p.id = pid;
+    }
+    if (p) { p.name = name; p.online = true; afterPresence(); return; }
+    const w = S.waiting.find(x => x.id === pid);
+    if (w) { w.name = name; w.online = true; changed(); return; }
+    if (S.phase === 'lobby') {
+      if (S.players.length < MAX_PLAYERS) S.players.push(newPlayer(pid, name, false));
+      else {
+        const b = S.players.map(x => x.bot).lastIndexOf(true);
+        if (b < 0) { try { c.send({ t: 'full' }); } catch (e) { /* skip */ } conns.delete(c); return; }
+        S.players[b] = newPlayer(pid, name, false);
+      }
+    } else S.waiting.push({ id: pid, name, online: true });
+    addLog(`${name} joined the room.`);
+    changed();
+    return;
+  }
+  if (m.t === 'bye' && c.pid) {
+    const i = idxOf(c.pid);
+    if (S.phase === 'lobby' && i >= 0) S.players.splice(i, 1);
+    S.waiting = S.waiting.filter(w => w.id !== c.pid);
+    conns.delete(c);
+    if (S.phase !== 'lobby' && i >= 0 && S.players[i] && S.players[i].id === c.pid) { S.players[i].online = false; afterPresence(); return; }
+    changed();
+    return;
+  }
+  if (m.t === 'act' && c.pid) handleAct(c.pid, String(m.act), m.data);
+}
+function hostDrop(c) {
+  if (!conns.has(c)) return;
+  conns.delete(c);
+  if (c.pid && ![...conns].some(x => x.pid === c.pid)) {
+    const p = S && S.players.find(x => x.id === c.pid);
+    if (p) p.online = false;
+    const w = S && S.waiting.find(x => x.id === c.pid);
+    if (w) w.online = false;
+    afterPresence();
+  }
+}
+function afterPresence() {
+  if (!S) return;
+  if (S.phase === 'play') checkEnd(); step();
+}
+function normalizeHost() {
+  S.players.forEach(p => { if (!p.bot) p.online = p.id === me; });
+  S.waiting.forEach(w => { w.online = false; });
+  token++; clearTimeout(timer);
+  if (S.phase !== 'lobby') step();
+}
+
+/* ---- guest ---- */
+function joinRoom(code) {
+  role = 'guest'; roomCode = code; V = null; everConnected = false; link = null; lastState = { hs: null, sv: 0 };
+  homeMsg = 'Connecting to room ' + code + '…'; homeErr = false;
+  render();
+  setNet('Connecting…', true);
+  relayStart(roomTopic('g/' + me), guestRelayMsg);
+  clearTimeout(fallbackTimer); fallbackTimer = setTimeout(useRelay, 4000);
+  clearTimeout(giveUpTimer);
+  giveUpTimer = setTimeout(() => {
+    if (role === 'guest' && !everConnected) leave(`Couldn't reach room ${code}. Check the code, and that the host still has the game open.`);
+  }, 25000);
+  clearInterval(beatIv);
+  beatIv = setInterval(() => {
+    if (role !== 'guest' || !link || !hostConn) return;
+    try { hostConn.send({ t: 'ping' }); } catch (e) { /* skip */ }
+    if (Date.now() - lastHostMsg > 16000) {
+      setNet('Lost the host. Reconnecting…', true);
+      if (link === 'relay') hostConn.send({ t: 'hello', cid: me, name: myName });
+      else { link = null; hostConn = null; lastHostMsg = Date.now(); retryLater(); useRelay(); }
+    }
+  }, 5000);
+  if (typeof Peer === 'undefined') { useRelay(); return; }
+  peer = new Peer({ debug: 1 });
+  peer.on('open', connectHost);
+  peer.on('disconnected', () => { setTimeout(() => { try { if (peer && !peer.destroyed) peer.reconnect(); } catch (e) { /* skip */ } }, 1500); });
+  peer.on('error', e => {
+    if (link === 'relay') return;
+    useRelay();
+    setNet(e.type === 'peer-unavailable' ? (everConnected ? 'Host not reachable. Retrying…' : 'Trying another way to reach the room…') : 'Connection problem. Retrying…', true);
+    retryLater();
+  });
+}
+function linked(how) {
+  everConnected = true; link = how; clearTimeout(giveUpTimer); lastHostMsg = Date.now();
+  setNet('Connected' + (how === 'relay' ? ' · backup link' : ''));
+  setItem(LS, 'cb-guest', { code: roomCode });
+}
+function useRelay() {
+  if (role !== 'guest' || link === 'peer' || helloIv) return;
+  const hello = () => {
+    if (role !== 'guest' || link) { clearInterval(helloIv); helloIv = 0; return; }
+    relaySend(roomTopic('host'), { t: 'hello', cid: me, name: myName });
+  };
+  helloIv = setInterval(hello, 2000); hello();
+}
+function relayHostConn() { return { relay: true, open: true, send: m => relaySend(roomTopic('host'), m) }; }
+function guestRelayMsg(m) {
+  if (role !== 'guest' || !m) return;
+  lastHostMsg = Date.now();
+  if (m.t !== 'state' && m.t !== 'full' && m.t !== 'kicked' && m.t !== 'closed') return;
+  if (m.t === 'state' && link !== 'peer' && link !== 'relay') { hostConn = relayHostConn(); linked('relay'); }
+  else if (link === 'relay') setNet('Connected · backup link');
+  if (link === 'relay' || m.t !== 'state') guestMsg(m);
+}
+function guestMsg(m) {
+  if (!m) return;
+  if (m.t === 'full') { leave('That room is full. Rooms hold 8 players.'); return; }
+  if (m.t === 'kicked') { leave('The host removed you from the room.'); return; }
+  if (m.t === 'closed') { leave('The host closed the room.'); return; }
+  if (m.t !== 'state') return;
+  if (m.hs === lastState.hs && m.sv <= lastState.sv) return;
+  lastState = { hs: m.hs, sv: m.sv };
+  V = m.v;
+  render();
+}
+function connectHost() {
+  if (!peer || peer.destroyed || role !== 'guest') return;
+  const c = peer.connect(peerIdFor(roomCode), { reliable: true });
+  if (!link) hostConn = c;
+  c.on('open', () => { hostConn = c; c.send({ t: 'hello', cid: me, name: myName }); linked('peer'); });
+  c.on('data', m => { if (link === 'peer' && hostConn === c) { lastHostMsg = Date.now(); guestMsg(m); } });
+  c.on('close', () => {
+    if (role === 'guest' && hostConn === c) { link = null; hostConn = null; setNet('Lost the host. Reconnecting…', true); retryLater(); useRelay(); }
+  });
+}
+function retryLater() {
+  clearTimeout(retryTimer);
+  retryTimer = setTimeout(() => {
+    if (!peer || peer.destroyed || role !== 'guest') return;
+    if (peer.disconnected) { try { peer.reconnect(); } catch (e) { /* skip */ } setTimeout(connectHost, 1500); }
+    else connectHost();
+  }, 2500);
+}
+
+/* ---- shared ---- */
+function act(name, data) {
+  if (role === 'guest') { if (hostConn && hostConn.open) hostConn.send({ t: 'act', act: name, data }); }
+  else if (S) handleAct(me, name, data);
+}
+
+function leave(msg) {
+  if (role === 'guest' && hostConn && hostConn.open) { try { hostConn.send({ t: 'bye' }); } catch (e) { /* skip */ } }
+  if (role === 'host') conns.forEach(c => { try { c.send({ t: 'closed' }); } catch (e) { /* skip */ } });
+  token++; clearTimeout(timer);
+  clearTimeout(retryTimer); clearTimeout(fallbackTimer); clearTimeout(giveUpTimer); clearInterval(helloIv); clearInterval(beatIv); helloIv = 0;
+  const p = peer; setTimeout(() => { try { p && p.destroy(); } catch (e) { /* skip */ } }, 300);
+  setTimeout(relayStop, 300);
+  relayConns.clear(); conns.clear(); link = null; peer = null; hostConn = null;
+  if (role === 'host') setItem(LS, 'cb-host', null);
+  if (role === 'guest') setItem(LS, 'cb-guest', null);
+  role = null; S = null; V = null; roomCode = ''; pickFor = ''; shownOver = null;
+  homeMsg = msg || ''; homeErr = !!msg;
+  setNet('');
+  if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+  closeModal();
+  render();
+}
+
+/* ================= rendering ================= */
+function isRoomHost() { return role === 'host' || role === 'solo'; }
+function L() { return LEVELS[V.level] || LEVELS.normal; }
+function myState() { return V && V.me >= 0 ? V.players[V.me].st : null; }
+function myTurn() { return !!(V && V.phase === 'play' && myState() === 'play'); }
+function pegHTML(c, o) {
+  o = o || {};
+  if (c == null) return `<span class="peg empty${o.next ? ' next' : ''}"${o.slot != null ? ` data-slot="${o.slot}" role="button" tabindex="0" aria-label="Empty spot ${o.slot + 1}"` : ' aria-hidden="true"'}></span>`;
+  if (o.btn) return `<button class="peg k${c}" type="button" data-color="${c}" aria-label="${CNAME[c]}"${o.disabled ? ' disabled' : ''}>${SYM[c]}</button>`;
+  return `<span class="peg k${c}${o.pop ? ' pop' : ''}"${o.slot != null ? ` data-slot="${o.slot}" role="button" tabindex="0" aria-label="${CNAME[c]} in spot ${o.slot + 1}, tap to remove"` : ` aria-label="${CNAME[c]}"`}>${SYM[c]}</span>`;
+}
+function fbHTML(b, w, n) {
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(`<i class="${i < b ? 'b' : i < b + w ? 'w' : ''}"></i>`);
+  return `<span class="fb" style="grid-template-columns: repeat(${n <= 4 ? 2 : 3}, 12px)" aria-label="${b} right place, ${w} wrong place">${out.join('')}</span>`;
+}
+
+function render() {
+  const screen = !role || (role === 'guest' && !V) ? 'home' : V && V.phase === 'lobby' ? 'lobby' : 'game';
+  if (screen !== 'game') { document.title = 'Code Breaker · Game Night'; }
+  $('home').hidden = screen !== 'home';
+  $('lobby').hidden = screen !== 'lobby';
+  $('app').hidden = screen !== 'game';
+  if (screen === 'home') renderHome();
+  else if (screen === 'lobby') renderLobby();
+  else renderGame();
+}
+function renderNet() {
+  const el = $('net');
+  el.textContent = role === 'host' || role === 'guest' ? `· Room ${roomCode} · ${netText}` : '';
+  el.className = 'net' + (netWarn ? ' warn' : '');
+  $('lNet').textContent = netText || ' ';
+}
+function levelsHTML(cur, edit) {
+  return Object.keys(LEVELS).map(k => `<button type="button" data-level="${k}" aria-pressed="${k === cur}"${edit ? '' : ' disabled'}>${LEVELS[k].name}<small>${LEVELS[k].note}</small></button>`).join('');
+}
+function renderHome() {
+  if (document.activeElement !== $('hName')) $('hName').value = myName;
+  $('onlineBox').hidden = !onlineOK;
+  $('onlineNote').hidden = onlineOK;
+  const savedHost = getItem(LS, 'cb-host');
+  $('hReopen').hidden = !(savedHost && savedHost.code && role !== 'guest');
+  if (savedHost && savedHost.code) $('hReopen').textContent = `Reopen your room ${savedHost.code}`;
+  const solo = getItem(LS, 'cb-solo');
+  $('hContinue').hidden = !(solo && solo.v === 1 && solo.phase === 'play');
+  $('hCreate').disabled = $('hJoin').disabled = role === 'guest';
+  $('hLevels').innerHTML = levelsHTML(homeLevel, true);
+  const d = getItem(LS, 'cb-daily');
+  const done = d && d.day === today();
+  $('dailyTitle').textContent = done ? (d.won ? `Today's code: cracked in ${d.tries}!` : "Today's code: not cracked") : "Today's code";
+  $('dailyNote').textContent = done ? `Streak: ${d.streak || 0} day${d.streak === 1 ? '' : 's'}. A new code comes tomorrow.` : 'The same code for everyone today. 4 pegs, repeats allowed.';
+  $('hDaily').textContent = done ? 'See result' : 'Play';
+  const m = $('homeMsg');
+  m.textContent = homeMsg; m.className = 'msg' + (homeErr ? ' err' : '');
+}
+function shareLink() { return location.origin + location.pathname + '#' + roomCode; }
+function renderLobby() {
+  renderNet();
+  $('lCode').textContent = roomCode;
+  $('lLink').textContent = shareLink();
+  $('lCopy').textContent = navigator.share ? 'Share link' : 'Copy link';
+  const host = role === 'host';
+  const n = V.players.length;
+  $('lCount').textContent = `Players (${n} of ${MAX_PLAYERS})`;
+  $('lPlayers').innerHTML = V.players.map(p => {
+    const dot = p.bot ? 'cpu' : p.online ? '' : 'off';
+    const tag = p.id === V.hostId ? 'Host' : p.bot ? 'Computer' : p.online ? '' : 'Away';
+    const rm = host && p.id !== V.hostId ? `<button class="x" type="button" data-remove="${esc(p.id)}" aria-label="Remove ${esc(p.name)}">Remove</button>` : '';
+    return `<li><span class="dot ${dot}" aria-hidden="true"></span><span class="nm">${esc(p.name)}${p.id === me ? ' (you)' : ''}</span><span class="note">${tag}</span>${rm}</li>`;
+  }).join('') + (V.waiting.length ? `<li><span class="nm note">Waiting: ${esc(V.waiting.join(', '))}</span></li>` : '');
+  $('lLevels').innerHTML = levelsHTML(V.level, host);
+  $('lHost').hidden = !host;
+  $('lAddBot').disabled = n >= MAX_PLAYERS;
+  $('lStart').disabled = n < 2;
+  $('lNote').textContent = host
+    ? (n < 2 ? 'Share the code so friends can join, or add a computer player to race.' : 'Everyone races to crack the same code. More friends can still join.')
+    : `Waiting for the host to start. ${LEVELS[V.level].name}: ${LEVELS[V.level].note}.`;
+}
+
+function renderGame() {
+  if (!V) return;
+  renderNet();
+  if (V.phase !== 'end' && $('sheet').dataset.kind === 'results') closeModal();
+  $('roundNo').textContent = V.mode === 'daily' ? `Daily code · ${V.day}` : `Round ${V.round} · ${L().name}`;
+  const key = V.round + '-' + V.mode;
+  if (draftFor !== key) { draftFor = key; draft = []; }
+  renderPeople();
+  renderBoard();
+  renderAct();
+  document.title = myTurn() ? 'Your move · Code Breaker' : 'Code Breaker · Game Night';
+  if (V.phase === 'end' && shownOver !== key) {
+    shownOver = key;
+    setTimeout(() => { if (V && V.phase === 'end' && $('modal').hidden) openResults(); }, 1500);
+  }
+}
+function renderPeople() {
+  const el = $('people');
+  if (V.players.length < 2) { el.hidden = true; return; }
+  el.hidden = false;
+  el.innerHTML = V.players.map((p, i) => {
+    const last = p.fb[p.fb.length - 1];
+    const mini = last ? `<span class="mini">${Array.from({ length: L().pegs }, (_, k) => `<i class="${k < last[0] ? 'b' : k < last[0] + last[1] ? 'w' : ''}"></i>`).join('')}</span>` : '';
+    const t = p.st === 'won' ? `Cracked · ${p.tries}` : p.st === 'out' ? 'Out' : `${p.tries}/${L().tries}`;
+    return `<div class="who ${p.st === 'won' ? 'won' : p.st === 'out' ? 'out' : ''}${i === V.me ? ' me' : ''}"><span class="n">${esc(p.name)}<b>${p.score}</b></span><span class="t">${t} ${p.st === 'play' ? mini : ''}</span></div>`;
+  }).join('');
+}
+function renderBoard() {
+  const el = $('board');
+  const lv = L();
+  const rows = V.rows;
+  const playing = myTurn();
+  let html = '<div class="spacer"></div>';
+  if (V.code) html += `<div class="secret"><p class="eyebrow">The secret code</p><div class="pegs">${V.code.map(c => pegHTML(c)).join('')}</div></div>`;
+  rows.forEach((r, k) => {
+    html += `<div class="grow-row"><span class="no">${k + 1}</span><span class="pegs">${r.g.map(c => pegHTML(c)).join('')}</span>${fbHTML(r.b, r.w, lv.pegs)}</div>`;
+  });
+  if (playing) {
+    const firstEmpty = Array.from({ length: lv.pegs }, (_, i) => i).find(i => draft[i] == null);
+    html += `<div class="grow-row cur"><span class="no">${rows.length + 1}</span><span class="pegs">${Array.from({ length: lv.pegs }, (_, i) => pegHTML(draft[i], { slot: i, next: i === firstEmpty, pop: draft[i] != null && i === lastPut })).join('')}</span>${fbHTML(0, 0, lv.pegs)}</div>`;
+  }
+  el.innerHTML = html;
+  el.scrollTop = el.scrollHeight;
+  lastPut = -1;
+}
+let lastPut = -1;
+function draftOK() {
+  const lv = L();
+  return draft.filter(x => x != null).length === lv.pegs && (lv.rep || new Set(draft).size === lv.pegs);
+}
+function renderAct() {
+  const lv = L();
+  const host = isRoomHost();
+  const st = myState();
+  let status = '', sub = '', more = '';
+  const pal = $('palette');
+  if (V.phase === 'play' && st === 'play') {
+    const left = lv.tries - V.rows.length;
+    status = V.rows.length ? `Try ${V.rows.length + 1} of ${lv.tries}` : 'Make your first guess.';
+    sub = `● right colour, right spot · ○ right colour, wrong spot.${lv.rep ? ' Colours can repeat.' : ' No colour twice.'}`;
+    pal.hidden = false;
+    pal.innerHTML = Array.from({ length: lv.colors }, (_, c) => pegHTML(c, { btn: true, disabled: !lv.rep && draft.includes(c) })).join('');
+    more = `<div class="actions"><button class="btn" type="button" id="aClear"${draft.some(x => x != null) ? '' : ' disabled'}>Clear</button><button class="btn primary" type="button" id="aCheck"${draftOK() ? '' : ' disabled'}>Check</button></div>`
+      + (left <= 3 ? `<p class="note">${left} ${left === 1 ? 'try' : 'tries'} left.</p>` : '')
+      + `<p class="note"><button class="ghost" type="button" id="aGiveUp" style="min-height:30px;padding:3px 12px">Give up</button></p>`;
+  } else {
+    pal.hidden = true; pal.innerHTML = '';
+    if (V.phase === 'play') {
+      const others = V.players.filter(p => p.st === 'play').length;
+      status = st === 'won' ? `Cracked in ${V.rows.length}!` : st === 'out' ? (V.rows.length >= lv.tries ? 'Out of tries.' : 'You gave up.') : 'Watching this round.';
+      sub = `Waiting for ${others} more player${others === 1 ? '' : 's'}. The code shows when the round ends.`;
+      if (host) more = '<div class="actions"><button class="btn" type="button" id="aEndNow">End the round now</button></div>';
+    } else if (V.phase === 'end') {
+      const r = V.results.find(x => x.pi === V.me) || {};
+      status = r.won ? `You cracked it in ${r.tries}!` : 'The code got away this time.';
+      if (V.players.length > 1) { const w = V.results.filter(x => x.won).sort((a, b) => a.place - b.place)[0]; sub = w ? `${V.players[w.pi].id === me ? 'You were' : esc(V.players[w.pi].name) + ' was'} fastest: ${w.tries} tries.` : 'Nobody cracked it.'; }
+      else sub = V.mode === 'daily' ? 'Come back tomorrow for a new code.' : '';
+      if (V.mode === 'daily') more = '<div class="actions"><button class="btn" type="button" id="aResults">Share result</button><button class="btn primary" type="button" id="aHome">Done</button></div>';
+      else more = `<div class="actions"><button class="btn" type="button" id="aResults">Results</button>${host ? '<button class="btn primary" type="button" id="aNext">Next code</button>' : ''}</div>${host ? '' : '<p class="note">The host starts the next code.</p>'}`;
+    }
+  }
+  $('act').classList.toggle('mine', myTurn());
+  $('status').textContent = status;
+  $('sub').innerHTML = sub;
+  $('actMore').innerHTML = more;
+}
+
+/* ================= modals ================= */
+function openModal(html, kind) { $('sheet').innerHTML = html; $('sheet').dataset.kind = kind || ''; $('modal').hidden = false; const f = $('sheet').querySelector('button, input, select'); if (f && kind !== 'results') f.focus(); }
+function closeModal() { $('modal').hidden = true; $('sheet').innerHTML = ''; $('sheet').dataset.kind = ''; }
+function openRules() {
+  openModal(`<h2>How to <span>play</span></h2>
+  <p class="lede">A secret code of coloured pegs is hidden. Crack it in as few tries as you can.</p>
+  <ul class="rules">
+    <li><b>Guess.</b> Tap colours to fill a row, then tap Check. Tap a peg in your row to take it out again.</li>
+    <li><b>Clues.</b> A solid dot ● means one of your pegs is the right colour in the right spot. A ring ○ means a right colour in the wrong spot. The clues don't say which pegs they mean.</li>
+    <li><b>Example.</b> If the code is red blue red green and you guess red red yellow yellow, you get ● ○: one red is in the right spot, the other red belongs somewhere else.</li>
+    <li><b>Levels.</b> Easy: 4 pegs from 6 colours, no colour twice. Normal: colours can repeat. Hard: 5 pegs from 8 colours, 12 tries.</li>
+    <li><b>Racing.</b> In a room, everyone cracks the same code. Fewest tries wins; on a tie, the quicker one. Points: 3, 2, 1 for the first three.</li>
+    <li><b>Daily code.</b> Everyone in the world gets the same code each day. Keep your streak going and share your result.</li>
+  </ul>
+  <div class="sheet-actions"><button class="btn primary" type="button" data-close>Got it</button></div>`);
+}
+function shareText() {
+  const d = getItem(LS, 'cb-daily');
+  if (!d) return '';
+  const grid = (d.rows || []).map(([b, w]) => '🟢'.repeat(b) + '🟡'.repeat(w) + '⚫'.repeat(4 - b - w)).join('\n');
+  return `Code Breaker daily ${d.day}: ${d.won ? d.tries + '/10' : 'X/10'}\n${grid}\nhttps://libyan11.github.io/code-breaker/`;
+}
+function openResults() {
+  if (!V || V.phase !== 'end') return;
+  if (V.mode === 'daily') {
+    const d = getItem(LS, 'cb-daily') || {};
+    openModal(`<h2>${d.won ? 'Cracked <span>in ' + d.tries + '</span>' : 'Not <span>this time</span>'}</h2>
+      <p class="lede">Daily code for ${esc(V.day)}. Streak: <b>${d.streak || 0}</b> · best ${d.best || 0}.</p>
+      <div class="emoji-grid">${esc(shareText().split('\n').slice(1, -1).join('\n'))}</div>
+      <p class="note" id="shareMsg" aria-live="polite"></p>
+      <div class="sheet-actions"><button class="btn" type="button" data-close>Close</button><button class="btn primary" type="button" id="mShare">${navigator.share ? 'Share' : 'Copy result'}</button></div>`, 'results');
+    return;
+  }
+  const host = isRoomHost();
+  const res = V.results.slice().sort((a, b) => (b.won - a.won) || (a.won ? a.place - b.place : 0));
+  const btns = host
+    ? `<button class="btn" type="button" data-close>Look at the board</button>${role === 'host' ? '<button class="btn" type="button" id="mLobby">Back to lobby</button>' : ''}<button class="btn primary" type="button" id="mNext">Next code</button>`
+    : `<button class="btn primary" type="button" data-close>Look at the board</button>`;
+  const first = res[0] && res[0].won ? V.players[res[0].pi] : null;
+  openModal(`<h2>${first ? (first.id === me ? 'You were <span>fastest!</span>' : esc(first.name) + ' <span>cracked it first</span>') : 'Nobody <span>cracked it</span>'}</h2>
+    <p class="lede">Round ${V.round}. ${host ? '' : 'The host starts the next code.'}</p>
+    <ol class="order">${res.map((r, k) => { const p = V.players[r.pi]; const secs = r.ms != null ? Math.round(r.ms / 1000) : null; return `<li class="${r.pi === V.me ? 'me-row' : ''}"><span class="pl">${r.won ? k + 1 : '–'}</span><span class="nm">${esc(p.name)}<small>${r.won ? `${r.tries} tries · ${secs}s` : 'not cracked'}</small></span><span class="plus">${r.pts ? '+' + r.pts : ''}</span><span class="pts">${p.score}<small>points</small></span></li>`; }).join('')}</ol>
+    <div class="sheet-actions">${btns}</div>`, 'results');
+}
+function openScores() {
+  if (!V) return;
+  const order = V.players.map((p, i) => i).sort((a, b) => V.players[b].score - V.players[a].score);
+  openModal(`<h2>Table <span>scores</span></h2>
+    <p class="lede">Points after ${V.round} round${V.round === 1 ? '' : 's'}.</p>
+    <ol class="order">${order.map((i, k) => { const p = V.players[i]; return `<li class="${i === V.me ? 'me-row' : ''}"><span class="pl">${k + 1}</span><span class="nm">${esc(p.name)}</span><span></span><span class="pts">${p.score}<small>${p.wins} first${p.wins === 1 ? '' : 's'}</small></span></li>`; }).join('')}</ol>
+    <div class="sheet-actions"><button class="btn primary" type="button" data-close>Close</button></div>`);
+}
+function openLeave() {
+  const msg = role === 'host' ? 'This closes the room for everyone in it.' : role === 'guest' ? 'You can rejoin with the same code and name.' : V && V.mode === 'daily' ? 'Your guesses so far are kept for today.' : 'Your game is saved. You can continue it from the start screen.';
+  openModal(`<h2>${role === 'host' ? 'Close the <span>room</span>?' : role === 'guest' ? 'Leave the <span>room</span>?' : 'Back to the <span>start screen</span>?'}</h2>
+    <p class="lede">${msg}</p>
+    <div class="sheet-actions"><button class="btn" type="button" data-close>Stay</button><button class="btn primary" type="button" id="mLeave">${role === 'host' ? 'Close room' : role === 'guest' ? 'Leave' : 'Start screen'}</button></div>`);
+}
+
+/* ================= starting things ================= */
+function readName(optional) {
+  const v = ($('hName').value || '').trim().slice(0, 14);
+  if (!v) { if (optional) { myName = myName || 'You'; return true; } homeMsg = 'Type your name first.'; homeErr = true; renderHome(); $('hName').focus(); return false; }
+  myName = v; setItem(LS, 'cb-name', v);
+  return true;
+}
+function startSolo(bots) {
+  if (!readName(true)) return;
+  setItem(LS, 'cb-level', homeLevel);
+  role = 'solo'; S = baseState('solo', homeLevel);
+  S.players.push(newPlayer(me, myName, false));
+  for (let i = 0; i < bots; i++) S.players.push(newPlayer('bot-' + rid(), BOT_NAMES[i], true));
+  newRound();
+}
+function startDaily() {
+  readName(true);
+  const saved = getItem(LS, 'cb-daygame');
+  role = 'solo';
+  if (saved && saved.v === 1 && saved.day === today()) { S = saved; S.hostId = me; S.players[0].id = me; shownOver = 'shown-' + S.round; }
+  else { S = baseState('daily', DAILY_LEVEL); S.players.push(newPlayer(me, myName, false)); newRound(); return; }
+  changed();
+  if (S.phase === 'end') openResults();
+}
+function continueSolo() {
+  const s = getItem(LS, 'cb-solo');
+  if (!s || s.v !== 1) return;
+  role = 'solo'; S = s; S.hostId = me;
+  const hp = S.players.find(p => !p.bot); if (hp) { hp.id = me; hp.online = true; }
+  botMem.clear();
+  S.players.forEach((p, i) => { if (p.bot) S.botAt[i] = Date.now() + 2500 + Math.random() * 4000; });
+  step();
+}
+function createRoom() {
+  if (!readName()) return;
+  if (waitNet(createRoom)) return;
+  if (!netReady()) { homeMsg = "Couldn't load the connection tools. Check your internet and reload."; homeErr = true; renderHome(); return; }
+  role = 'host'; roomCode = newCode(); hostSess = rid(); shownOver = null;
+  S = baseState('room', homeLevel);
+  S.players.push(newPlayer(me, myName, false));
+  history.replaceState(null, '', '#' + roomCode);
+  openHostPeer(); startHostRelay();
+  changed();
+}
+function reopenRoom() {
+  const g = getItem(LS, 'cb-host');
+  if (!g || !g.S) return;
+  if (!readName()) return;
+  if (waitNet(reopenRoom)) return;
+  if (!netReady()) { homeMsg = "Couldn't load the connection tools. Check your internet and reload."; homeErr = true; renderHome(); return; }
+  role = 'host'; roomCode = g.code; hostSess = rid(); S = g.S;
+  const hp = S.players.find(p => p.id === S.hostId) || S.players.find(p => !p.bot);
+  if (hp) { hp.id = me; hp.name = myName; }
+  S.hostId = me; shownOver = null; botMem.clear();
+  history.replaceState(null, '', '#' + roomCode);
+  openHostPeer(); startHostRelay();
+  normalizeHost();
+  changed();
+}
+function joinFromForm() {
+  if (!readName()) return;
+  const code = ($('hCode').value || '').toUpperCase().replace(/[^A-Z]/g, '');
+  if (code.length !== 4) { homeMsg = 'Room codes are 4 letters.'; homeErr = true; renderHome(); return; }
+  if (waitNet(joinFromForm)) return;
+  if (!netReady()) { homeMsg = "Couldn't load the connection tools. Check your internet and reload."; homeErr = true; renderHome(); return; }
+  history.replaceState(null, '', '#' + code);
+  pickFor = ''; shownOver = null;
+  joinRoom(code);
+}
+function toHome() { token++; clearTimeout(timer); role = null; S = null; V = null; shownOver = null; homeMsg = ''; homeErr = false; render(); }
+
+/* ================= events ================= */
+$('hSolo').addEventListener('click', () => startSolo(+$('hBots').value));
+$('hDaily').addEventListener('click', startDaily);
+$('hContinue').addEventListener('click', continueSolo);
+$('hCreate').addEventListener('click', createRoom);
+$('hReopen').addEventListener('click', reopenRoom);
+$('joinForm').addEventListener('submit', e => { e.preventDefault(); joinFromForm(); });
+$('hRules').addEventListener('click', openRules);
+$('hName').addEventListener('input', () => { if (homeErr) { homeMsg = ''; homeErr = false; $('homeMsg').textContent = ''; } });
+$('hLevels').addEventListener('click', e => { const b = e.target.closest('[data-level]'); if (!b) return; homeLevel = b.dataset.level; setItem(LS, 'cb-level', homeLevel); renderHome(); });
+$('lLevels').addEventListener('click', e => { const b = e.target.closest('[data-level]'); if (!b || b.disabled) return; homeLevel = b.dataset.level; setItem(LS, 'cb-level', homeLevel); act('settings', { level: b.dataset.level }); });
+
+$('lAddBot').addEventListener('click', () => act('addBot'));
+$('lStart').addEventListener('click', () => act('start'));
+$('lPlayers').addEventListener('click', e => { const b = e.target.closest('[data-remove]'); if (b) act('remove', { id: b.dataset.remove }); });
+$('lRules').addEventListener('click', openRules);
+$('lLeave').addEventListener('click', openLeave);
+$('lCopy').addEventListener('click', () => {
+  const link = shareLink(), msg = $('lCopyMsg');
+  const done = t => { msg.textContent = t; setTimeout(() => { msg.textContent = ''; }, 2500); };
+  if (navigator.share) { navigator.share({ title: 'Code Breaker', text: `Join my Code Breaker room. Code: ${roomCode}`, url: link }).catch(() => {}); return; }
+  const pickText = () => { const r = document.createRange(); r.selectNodeContents($('lLink')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); done('Link selected. Copy it from here.'); };
+  try { navigator.clipboard.writeText(link).then(() => done('Link copied. Send it to your friends.'), pickText); } catch (e) { pickText(); }
+});
+
+$('palette').addEventListener('click', e => {
+  const b = e.target.closest('[data-color]');
+  if (!b || b.disabled || !myTurn()) return;
+  const lv = L();
+  const i = Array.from({ length: lv.pegs }, (_, k) => k).find(k => draft[k] == null);
+  if (i == null) return;
+  draft[i] = +b.dataset.color; lastPut = i;
+  renderBoard(); renderAct();
+});
+function clearSlot(e) {
+  const s = e.target.closest('[data-slot]');
+  if (!s || !myTurn()) return;
+  draft[+s.dataset.slot] = null;
+  renderBoard(); renderAct();
+}
+$('board').addEventListener('click', clearSlot);
+$('board').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); clearSlot(e); } });
+$('actMore').addEventListener('click', e => {
+  const t = e.target;
+  if (t.closest('#aClear')) { draft = []; renderBoard(); renderAct(); }
+  else if (t.closest('#aCheck')) { if (myTurn() && draftOK()) { const g = draft.slice(); draft = []; act('guess', { g }); } }
+  else if (t.closest('#aGiveUp')) openModal(`<h2>Give <span>up</span>?</h2><p class="lede">You'll see the code when the round ends.</p><div class="sheet-actions"><button class="btn" type="button" data-close>Keep trying</button><button class="btn primary" type="button" id="mGiveUp">Give up</button></div>`);
+  else if (t.closest('#aEndNow')) act('endNow');
+  else if (t.closest('#aNext')) { closeModal(); act('next'); }
+  else if (t.closest('#aResults')) openResults();
+  else if (t.closest('#aHome')) toHome();
+});
+$('btnRules').addEventListener('click', openRules);
+$('btnScores').addEventListener('click', openScores);
+$('btnLeave').addEventListener('click', openLeave);
+$('btnMenu').addEventListener('click', () => {
+  openModal(`<h2>Menu</h2>
+    <div class="menu-list">
+      <button class="btn" type="button" id="mmRules">Rules</button>
+      ${V && V.players.length > 1 ? '<button class="btn" type="button" id="mmScores">Scores</button>' : ''}
+      ${V && V.phase === 'end' ? '<button class="btn" type="button" id="mmResults">Round result</button>' : ''}
+      <button class="btn" type="button" id="mmLeave">${role === 'host' ? 'Close room' : role === 'guest' ? 'Leave room' : 'Start screen'}</button>
+    </div>
+    <div class="sheet-actions"><button class="btn primary" type="button" data-close>Back to the game</button></div>`);
+});
+$('modal').addEventListener('click', e => {
+  if (e.target === $('modal') || e.target.closest('[data-close]')) closeModal();
+  else if (e.target.closest('#mmRules')) openRules();
+  else if (e.target.closest('#mmScores')) openScores();
+  else if (e.target.closest('#mmResults')) openResults();
+  else if (e.target.closest('#mmLeave')) openLeave();
+  else if (e.target.closest('#mGiveUp')) { closeModal(); act('giveup'); }
+  else if (e.target.closest('#mNext')) { closeModal(); act('next'); }
+  else if (e.target.closest('#mLobby')) { closeModal(); act('lobby'); }
+  else if (e.target.closest('#mShare')) {
+    const text = shareText(), msg = $('shareMsg');
+    if (navigator.share) navigator.share({ text }).catch(() => {});
+    else { try { navigator.clipboard.writeText(text).then(() => { msg.textContent = 'Copied. Paste it to your friends.'; }, () => { msg.textContent = text; }); } catch (x) { msg.textContent = text; } }
+  }
+  else if (e.target.closest('#mLeave')) { closeModal(); if (role === 'solo') toHome(); else leave(); }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modal').hidden) closeModal(); });
+window.addEventListener('pagehide', () => { if (role === 'guest' && hostConn && hostConn.open) { try { hostConn.send({ t: 'away' }); } catch (e) { /* skip */ } } });
+window.addEventListener('beforeunload', e => { if (role === 'host' && conns.size) { e.preventDefault(); e.returnValue = ''; } });
+
+/* ================= boot ================= */
+(function boot() {
+  const hashCode = (location.hash || '').replace('#', '').toUpperCase().replace(/[^A-Z]/g, '');
+  if (hashCode.length === 4) $('hCode').value = hashCode;
+  const savedGuest = getItem(LS, 'cb-guest');
+  const savedHost = getItem(LS, 'cb-host');
+  render();
+  if (!onlineOK) return;
+  NET.then(() => {
+    if (role) return;
+    if (myName && savedHost && savedHost.code && hashCode === savedHost.code && netReady()) { reopenRoom(); return; }
+    if (myName && savedGuest && savedGuest.code && (!hashCode || hashCode === savedGuest.code) && netReady()) { joinRoom(savedGuest.code); return; }
+    if (hashCode.length === 4) { homeMsg = myName ? `Tap Join room to join room ${hashCode}.` : `Type your name, then tap Join room to join room ${hashCode}.`; renderHome(); }
+  });
+})();
+})();
+</script>
+
+</html>
